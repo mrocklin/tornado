@@ -360,6 +360,8 @@ class BaseIOStream(object):
     def write(self, data, callback=None):
         """Asynchronously write the given data to this stream.
 
+        Data must be either a bytestring or a list of bytestrings.
+
         If ``callback`` is given, we call it when all of the buffered write
         data has been successfully written to the stream. If there was
         previously buffered write data and an old write callback, that
@@ -373,21 +375,26 @@ class BaseIOStream(object):
         .. versionchanged:: 4.0
             Now returns a `.Future` if no callback is given.
         """
-        assert isinstance(data, bytes)
+        assert (isinstance(data, bytes) or
+                (isinstance(data, list) and
+                 all(isinstance(x, bytes) for x in data)))
         self._check_closed()
         # We use bool(_write_buffer) as a proxy for write_buffer_size>0,
         # so never put empty strings in the buffer.
-        if data:
-            if (self.max_write_buffer_size is not None and
-                    self._write_buffer_size + len(data) > self.max_write_buffer_size):
-                raise StreamBufferFullError("Reached maximum write buffer size")
-            # Break up large contiguous strings before inserting them in the
-            # write buffer, so we don't have to recopy the entire thing
-            # as we slice off pieces to send to the socket.
-            WRITE_BUFFER_CHUNK_SIZE = 128 * 1024
-            for i in range(0, len(data), WRITE_BUFFER_CHUNK_SIZE):
-                self._write_buffer.append(data[i:i + WRITE_BUFFER_CHUNK_SIZE])
-            self._write_buffer_size += len(data)
+        if isinstance(data, bytes):
+            data = [data]
+        for b in data:
+            if b:
+                if (self.max_write_buffer_size is not None and
+                        self._write_buffer_size + len(b) > self.max_write_buffer_size):
+                    raise StreamBufferFullError("Reached maximum write buffer size")
+                # Break up large contiguous strings before inserting them in the
+                # write buffer, so we don't have to recopy the entire thing
+                # as we slice off pieces to send to the socket.
+                WRITE_BUFFER_CHUNK_SIZE = 128 * 1024
+                for i in range(0, len(b), WRITE_BUFFER_CHUNK_SIZE):
+                    self._write_buffer.append(b[i:i + WRITE_BUFFER_CHUNK_SIZE])
+                self._write_buffer_size += len(b)
         if callback is not None:
             self._write_callback = stack_context.wrap(callback)
             future = None

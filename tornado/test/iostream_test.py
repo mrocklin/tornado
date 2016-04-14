@@ -212,6 +212,17 @@ class TestIOStreamMixin(object):
         server.close()
         client.close()
 
+    def test_write_list_of_bytes(self):
+        server, client = self.make_iostream_pair()
+        client.write([b'1234', b'abcd'])
+        server.read_bytes(8, self.stop)
+        data = self.wait()
+
+        self.assertEqual(data, b'1234abcd')
+
+        server.close()
+        client.close()
+
     def test_write_zero_bytes(self):
         # Attempting to write zero bytes should run the callback without
         # going into an infinite loop.
