@@ -388,12 +388,15 @@ class BaseIOStream(object):
                 if (self.max_write_buffer_size is not None and
                         self._write_buffer_size + len(b) > self.max_write_buffer_size):
                     raise StreamBufferFullError("Reached maximum write buffer size")
-                # Break up large contiguous strings before inserting them in the
-                # write buffer, so we don't have to recopy the entire thing
-                # as we slice off pieces to send to the socket.
-                WRITE_BUFFER_CHUNK_SIZE = 128 * 1024
-                for i in range(0, len(b), WRITE_BUFFER_CHUNK_SIZE):
-                    self._write_buffer.append(b[i:i + WRITE_BUFFER_CHUNK_SIZE])
+                if sys.platform in ('linux', 'darwin'):
+                    self._write_buffer.append(b)
+                else:
+                    # Break up large contiguous strings before inserting them in
+                    # the write buffer, so we don't have to recopy the entire
+                    # thing as we slice off pieces to send to the socket.
+                    WRITE_BUFFER_CHUNK_SIZE = 128 * 1024
+                    for i in range(0, len(b), WRITE_BUFFER_CHUNK_SIZE):
+                        self._write_buffer.append(b[i:i + WRITE_BUFFER_CHUNK_SIZE])
                 self._write_buffer_size += len(b)
         if callback is not None:
             self._write_callback = stack_context.wrap(callback)
@@ -834,7 +837,8 @@ class BaseIOStream(object):
     def _handle_write(self):
         while self._write_buffer:
             try:
-                if not self._write_buffer_frozen:
+                if (not self._write_buffer_frozen
+                        and sys.platform not in ('linux', 'darwin')):
                     # On windows, socket.send blows up if given a
                     # write buffer that's too large, instead of just
                     # returning the number of bytes it was able to
@@ -854,7 +858,8 @@ class BaseIOStream(object):
                     self._write_buffer_frozen = True
                     break
                 self._write_buffer_frozen = False
-                _merge_prefix(self._write_buffer, num_bytes)
+                if num_bytes != len(self._write_buffer[0]):
+                    _merge_prefix(self._write_buffer, num_bytes)
                 self._write_buffer.popleft()
                 self._write_buffer_size -= num_bytes
             except (socket.error, IOError, OSError) as e:
